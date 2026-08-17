@@ -1021,17 +1021,142 @@ GET /users?cursor=eyJpZCI6MTB9&limit=20
 
 ### 27. Что такое CORS и как браузер применяет preflight?
 
-**Эталонный ответ:**
+**Зачем спрашивают:** классика фронтенда. Ловят, понимает ли кандидат разницу между **Same-Origin Policy** (SOP) и CORS, когда браузер шлёт `OPTIONS`, и почему «CORS-ошибка в консоли» — не всегда «сломайте бэкенд в React».
 
-**Same-Origin Policy** ограничивает чтение ответов другим origin из JS.  
-**CORS** — механизм *ослабленных* разрешений через заголовки сервера (`Access-Control-Allow-Origin` и др.).
+**Эталонный ответ (для ментора):**
 
-**Simple request** — некоторые GET/POST с «простыми» заголовками.  
-**Preflight** — заранее `OPTIONS`: браузер спрашивает, можно ли делать «непростой» запрос (кастомные заголовки вроде `Authorization`, `Content-Type: application/json` в ряде случаев, странные методы). Сервер отвечает allow-методами/заголовками.
+**Origin** = `scheme + host + port`.  
+`https://app.example.com:443` и `https://api.example.com` — **разные origin** (другой host).  
+`http://localhost:3000` и `http://localhost:8080` — разные (другой port).  
+`https://example.com` и `https://example.com/api` — **один origin** (path не входит).
 
-Важно: CORS — **браузерная** защита. Postman/curl её не «ломают» как дыру сервера — сервер всё равно должен проверять auth.
+**Same-Origin Policy (SOP)** — правило браузера: JS со страницы **origin A** по умолчанию **не может прочитать ответ** HTTP-запроса к **origin B** через `fetch` / XHR. Запрос физически может уйти, но JS не получит тело/заголовки ответа — браузер «заблокирует» доступ к результату.
 
-**Красные флаги:** «CORS настраивается только в React» / «выключи CORS в браузере» как решение.
+SOP защищает пользователя: злоумышленник с `evil.com` не прочитает ваши данные с `bank.com`, пока вы залогинены (cookie уйдут, но ответ JS не отдадут).
+
+**CORS (Cross-Origin Resource Sharing)** — механизм **ослабления** SOP: сервер **явно разрешает** браузеру отдать ответ JS-коду с другого origin через спец. заголовки. CORS — не «отключение безопасности», а **контракт сервер → браузер**: «этому origin можно читать мой ответ».
+
+Критично: CORS работает **только в браузере**. `curl`, Postman, серверный Node, мобильное нативное приложение SOP не применяют. Поэтому «в Postman работает, в браузере CORS error» — нормальная ситуация, а не «Postman умнее».
+
+---
+
+**Simple request vs preflight**
+
+Браузер делит cross-origin запросы на два класса.
+
+**Simple request** (упрощённо) — можно сразу отправить «настоящий» запрос, если одновременно:
+- метод: `GET`, `HEAD` или `POST`;
+- для `POST` — `Content-Type` только один из:  
+  `application/x-www-form-urlencoded`, `multipart/form-data`, `text/plain`;
+- только «простые» заголовки (Safelisted): `Accept`, `Accept-Language`, `Content-Language`, `Content-Type` (с лимитами выше) и ещё несколько (`Range` с ограничениями и т.д.).
+
+Пример simple: `GET https://api.example.com/users` с фронта `https://app.example.com`.
+
+**Preflighted request** — перед «настоящим» запросом браузер шлёт **`OPTIONS`** (preflight), если запрос «непростой»:
+- метод `PUT`, `PATCH`, `DELETE`, `CONNECT`, …;
+- `Content-Type: application/json` (типичный `fetch` с JSON);
+- кастомные заголовки: `Authorization`, `X-Request-Id`, `X-CSRF-Token`, …;
+- иногда особые `Content-Type` / чтение response headers, не входящих в safelist.
+
+На Middle почти все API-запросы с `Authorization` + JSON → **preflight**.
+
+---
+
+**Как работает preflight (пошагово)**
+
+Страница: `https://app.example.com`. API: `https://api.example.com`.
+
+1. JS вызывает, например:
+   ```js
+   fetch('https://api.example.com/users', {
+     method: 'PATCH',
+     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer …' },
+     body: JSON.stringify({ name: 'Ann' }),
+   });
+   ```
+2. Браузер **не** шлёт PATCH сразу. Сначала:
+   ```
+   OPTIONS /users HTTP/1.1
+   Origin: https://app.example.com
+   Access-Control-Request-Method: PATCH
+   Access-Control-Request-Headers: content-type, authorization
+   ```
+3. Сервер отвечает (если разрешает):
+   ```
+   Access-Control-Allow-Origin: https://app.example.com
+   Access-Control-Allow-Methods: GET, POST, PATCH, DELETE, OPTIONS
+   Access-Control-Allow-Headers: Content-Type, Authorization
+   Access-Control-Max-Age: 86400
+   ```
+4. Браузер проверяет: origin в allow-list? метод PATCH разрешён? нужные заголовки разрешены?
+5. Если да — отправляет **настоящий PATCH** с `Origin: https://app.example.com`.
+6. На ответ PATCH сервер снова должен вернуть **`Access-Control-Allow-Origin`** (и при credentials — ещё `Allow-Credentials`). Иначе JS не прочитает ответ, даже если preflight прошёл.
+
+`Access-Control-Max-Age` — сколько секунд браузер **кэширует** результат preflight (не слать OPTIONS на каждый клик). Типично 600–86400; в DevTools иногда видно один OPTIONS на серию запросов.
+
+**Simple request** preflight не делает: сразу GET/POST, но ответ всё равно должен содержать `Access-Control-Allow-Origin`, иначе JS его не увидит.
+
+---
+
+**Главные CORS-заголовки**
+
+| Заголовок | Кто шлёт | Зачем |
+|-----------|----------|--------|
+| `Origin` | браузер | с какой страницы идёт запрос |
+| `Access-Control-Allow-Origin` | сервер | какому origin можно читать ответ (`*` или конкретный URL) |
+| `Access-Control-Allow-Methods` | сервер (preflight) | разрешённые методы |
+| `Access-Control-Allow-Headers` | сервер (preflight) | разрешённые request headers |
+| `Access-Control-Expose-Headers` | сервер | какие **response** headers доступны JS (по умолчанию только простые: `Cache-Control`, `Content-Type`, …) |
+| `Access-Control-Allow-Credentials` | сервер | можно ли слать cookie / `Authorization` в credentialed mode |
+| `Access-Control-Max-Age` | сервер (preflight) | кэш preflight |
+
+**Credentials:** `fetch(url, { credentials: 'include' })` — cookie и HTTP-auth. Тогда:
+- **`Access-Control-Allow-Origin` не может быть `*`** — только конкретный origin;
+- нужен `Access-Control-Allow-Credentials: true`.
+
+Без credentials cookie на cross-origin API **не уйдут** (SameSite/Lax по умолчанию ещё сильнее режут). Это отдельная тема от CORS, но на собесе часто путают.
+
+---
+
+**Что видит фронтендер в DevTools**
+
+- Запрос **уходит**, в Network статус может быть `200`, но в Console:  
+  `Access to fetch at '…' from origin '…' has been blocked by CORS policy`.
+- Причина: нет/неверный `Access-Control-Allow-Origin`, preflight не прошёл, credentials mismatch, exposed header не разрешён.
+- **Исправлять на клиенте «обходом CORS»** (расширение, `mode: 'no-cors'`) — не решение для prod. `no-cors` даёт opaque response — JS всё равно не прочитает JSON.
+
+Правильные пути:
+1. **Настроить CORS на API** (allow origin фронта, methods, headers).
+2. **Same-origin proxy** в dev: Vite/Webpack `proxy` — браузер бьёт в `localhost:5173/api`, dev-server проксирует на бэкенд (для браузера это same-origin).
+3. **BFF** (Backend for Frontend) — один origin с фронтом, сервер ходит к API без CORS.
+
+---
+
+**CORS ≠ авторизация**
+
+Сервер может вернуть `Access-Control-Allow-Origin: *` и всё равно ответить `401 Unauthorized`. CORS решает только «может ли **браузер отдать ответ JS**», а не «имеет ли пользователь права». Auth проверяет API. Открытый CORS на публичный read-only API — ок; на приватные данные без auth — дыра не в CORS, а в auth.
+
+---
+
+**Хороший ответ кандидата:** origin → SOP блокирует чтение cross-origin → CORS разрешает через заголовки → simple vs preflight (JSON + Authorization = OPTIONS) → цепочка OPTIONS → PATCH → Allow-Origin на обоих этапах → браузер-only, Postman не доказательство.
+
+**Красные флаги:**
+- «CORS настраивается в React / axios» (только заголовки запроса; **Allow-*** ставит **сервер**).
+- «Выключи CORS в Chrome» как решение для prod.
+- «CORS защищает сервер от хакеров» — защищает **данные пользователя в браузере** от чужого JS.
+- Путает CORS и CSRF (разные атаки: чтение ответа vs подделка запроса с cookie).
+- Думает, что preflight видит тело PATCH (OPTIONS без body бизнес-данных).
+
+**Follow-up:** Почему `Access-Control-Allow-Origin: *` не работает с cookie?  
+→ Credentialed requests требуют конкретный origin; `*` запрещён спекой, иначе любой сайт мог бы читать ответы с вашими cookie.
+
+**Follow-up:** Зачем dev-proxy, если можно прописать CORS на бэке?  
+→ Локально бэкенд часто без CORS / другой origin; proxy убирает cross-origin в dev. На staging/prod CORS на API всё равно нужен для реального фронт-домена.
+
+**Follow-up:** Preflight шлётся на каждый запрос?  
+→ Нет, если запрос simple или preflight закэширован `Max-Age`. JSON + Authorization обычно preflight, но кэшируется.
+
+**Упрощение:** «Страница на `app.com`, API на `api.com`, `fetch` с JSON и токеном — что браузер сделает до PATCH?»
 
 ---
 
