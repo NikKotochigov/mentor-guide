@@ -184,65 +184,97 @@ function fail(message: string): never {
 
 **Эталонный ответ:**
 
-- **Union** `A | B` — значение одного из вариантов («или»).  
-  Пример: `string | number`, `"loading" | "success" | "error"`, `User | null`.
-- **Intersection** `A & B` — значение должно удовлетворять обоим («и»).  
-  Пример: `Props & { className?: string }`, смешение миксинов типов.
+В TypeScript **Union** (объединение) и **Intersection** (пересечение) — это операторы для создания новых типов из уже существующих.
+
+Если коротко:
+- **Union** `|` означает «**ИЛИ**». Переменная может быть **одним из указанных типов**.
+- **Intersection** `&` означает «**И**». Объект должен **объединять в себе свойства всех указанных типов**.
+
+#### 1) Union Types (`|`)
+
+Оператор `|` говорит, что значение принадлежит к типу `A` **или** к типу `B`.
 
 ```ts
-// Union примитивов и опциональность через null
-type Id = string | number;
-type MaybeUser = User | null;
+type ID = string | number; // ID может быть либо строкой, либо числом
 
-function printId(id: Id) {
-  console.log(String(id));
-}
-
-// Discriminated union — лучшая практика для вариантов объектов
-type Success = { status: "ok"; data: string };
-type Fail = { status: "error"; message: string };
-type Result = Success | Fail;
-
-function getMessage(result: Result): string {
-  if (result.status === "ok") return result.data;
-  return result.message;
-}
-
-// Intersection — склеить контракты
-type Timestamped = { createdAt: Date; updatedAt: Date };
-type User = { id: string; name: string };
-type StoredUser = User & Timestamped;
-
-const stored: StoredUser = {
-  id: "1",
-  name: "Ada",
-  createdAt: new Date(),
-  updatedAt: new Date(),
-};
-
-// React: расширить props
-type ButtonProps = {
-  title: string;
-  onClick: () => void;
-};
-type WithClassName = { className?: string };
-type FancyButtonProps = ButtonProps & WithClassName;
+let userId: ID = 101;      // ok
+userId = "id_999";         // ok
+// userId = true;          // ошибка: boolean не входит в string | number
 ```
 
-Когда что выбирать:
-- несколько **альтернатив** формы/значения → union;
-- объект должен иметь **все** поля из нескольких типов → intersection;
-- «пользователь или админ как роли» чаще `type Role = "user" | "admin"`, а не плохой `User | Admin` без дискриминатора.
+Когда использовать union:
+- для **гибких аргументов функций**, когда функция может принимать разные форматы данных;
+- для **literal types**, когда вместо широкого `string` задаём конкретный набор значений;
+- для **discriminated unions**, когда у объектов есть общее поле, по которому их можно различить.
+
+```ts
+type Status = "success" | "error" | "pending";
+
+type NetworkState =
+  | { status: "loading" }
+  | { status: "failed"; error: Error }
+  | { status: "success"; data: string };
+```
+
+#### 2) Intersection Types (`&`)
+
+Оператор `&` складывает типы вместе. Новый тип будет содержать **все свойства** всех объединённых типов.
+
+```ts
+type Person = { name: string };
+type Employee = { employeeId: number };
+
+type Staff = Person & Employee;
+
+const developer: Staff = {
+  name: "Алексей",
+  employeeId: 404,
+};
+```
+
+Когда использовать intersection:
+- для **расширения и композиции типов**, когда нужно взять существующий тип и добавить к нему новые поля;
+- для **плагинов и миксинов**, когда объединяем базовый контракт с дополнительными возможностями;
+- для **props** в React/Vue, когда нужны стандартные атрибуты плюс кастомные свойства.
+
+```ts
+type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  isLoading: boolean;
+};
+```
+
+#### Главный подвох
+
+Названия **union** и **intersection** пришли из теории множеств, поэтому на объектах они часто интуитивно воспринимаются наоборот.
+
+При `A | B` для объектов TypeScript разрешит напрямую обратиться только к **общим полям**, которые есть и в `A`, и в `B`.
+Чтобы достучаться до уникальных полей, нужно сделать **narrowing**:
+
+```ts
+if ("error" in state) {
+  console.log(state.error);
+}
+```
+
+При `A & B` получается “супер-объект”, у которого доступны **все поля** обоих типов сразу.
+
+| Оператор | Символ | Логика | Что доступно без проверок? |
+|---|---|---|---|
+| Union | `|` | ИЛИ | только общие свойства |
+| Intersection | `&` | И | все свойства обоих типов |
 
 Ловушки:
-- `string & number` → `never`;
-- для объектов intersection «склеивает» поля; конфликт одноимённых полей с несовместимыми типами → часто `never` у поля;
-- слишком широкий union без narrowing заставляет везде писать проверки.
+- `string & number` → `never`, потому что такого значения не существует;
+- если в intersection есть одноимённые поля с несовместимыми типами, пересечение может сломаться;
+- слишком широкий union без narrowing заставляет постоянно писать проверки.
 
-**Красные флаги:** путает `|` и `&`; пишет `User | Admin` там, где нужны общие поля через `&` или наоборот.
+**Красные флаги:**
+- путает `|` и `&`;
+- думает, что `A | B` для объектов автоматически даёт доступ ко всем полям;
+- не знает, что для union объектов почти всегда нужен narrowing.
 
-**Follow-up:** Что такое discriminated union (tagged union)? Почему `status`/`type` поле удобно?  
-→ Общий литеральный тег позволяет сузить весь объект одной проверкой.
+**Follow-up:** Что такое discriminated union и почему поле `status` или `type` удобно?  
+→ Потому что по одному литеральному полю можно сузить тип всего объекта.
 
 ---
 
@@ -252,254 +284,138 @@ type FancyButtonProps = ButtonProps & WithClassName;
 
 **Эталонный ответ (для ментора):**
 
-**Type narrowing** (сужение типа) — это когда TypeScript **внутри ветки кода** понимает более узкий тип, чем был объявлен снаружи. Работает через **control flow analysis**: компилятор смотрит на `if` / `switch` / `return` / `throw` и вычитает невозможные варианты из union.
+Type Narrowing (сужение типов) — это процесс в TypeScript, при котором компилятор на основе логических проверок в коде (в рантайме) определяет более конкретный тип переменной из нескольких возможных.
 
-Зачем нужно:
-- union (`string | number`, `User | null`, `Success | Fail`) снаружи широкий;
-- внутри проверки можно безопасно вызывать методы/читать поля только одного варианта;
-- альтернатива — плохой `as`, который врёт компилятору и не даёт runtime-защиты.
+Когда переменная изначально объявлена как объединение (Union, например `string | number`), TypeScript не разрешает использовать методы, уникальные для строки или числа. Сужение типов «доказывает» компилятору, какой именно тип находится в переменной в данном блоке кода, что открывает доступ к специфичным методам этого типа.
 
-Важно: narrowing — это **только этап компиляции**. В runtime остаются обычные JS-проверки (`typeof`, `===` и т.д.). TS лишь «подстраивает» типы под эти проверки.
+🛡 Все основные способы сужения типов
+TypeScript умеет анализировать стандартные javascript-конструкции и автоматически сужать типы внутри блоков `if`, `switch` и циклов.
 
----
-
-#### 1) `typeof` — для примитивов
+1. Оператор `typeof` (для примитивов)
+Используется для проверки базовых типов данных (строки, числа, булевы значения и т.д.).
 
 ```ts
-function printId(id: string | number) {
-  if (typeof id === "string") {
-    // здесь id: string
-    console.log(id.toUpperCase());
+function process(value: string | number) {
+  if (typeof value === "string") {
+    // Внутри этого блока value имеет тип string
+    console.log(value.toUpperCase());
   } else {
-    // здесь id: number
-    console.log(id.toFixed(0));
+    // Здесь TypeScript уверен, что value — это number
+    console.log(value.toFixed(2));
   }
 }
 ```
 
-Ограничения:
-- `typeof null === "object"` — как в JS; для `object | null` одного `typeof` мало;
-- `typeof` не отличает массивы/обычные объекты (`оба "object"`);
-- для class-инстансов обычно берут `instanceof`, не `typeof`.
+Используйте код с осторожностью.
 
----
-
-#### 2) Truthiness / проверка на `null` и `undefined`
+2. Оператор `in` (для свойств объектов)
+Позволяет проверить, существует ли определенное свойство внутри объекта.
 
 ```ts
-function greet(name?: string | null) {
-  if (name) {
-    // name: string (убрали null | undefined | "")
-    console.log(name.toUpperCase());
-  }
-}
+type Fish = { swim: () => void };
+type Bird = { fly: () => void };
 
-function load(user: User | null) {
-  if (user == null) return; // ловит и null, и undefined
-  // user: User
-  console.log(user.id);
+function move(animal: Fish | Bird) {
+  if ("swim" in animal) {
+    animal.swim(); // Тип сужен до Fish
+  } else {
+    animal.fly(); // Тип сужен до Bird
+  }
 }
 ```
 
-Нюанс: `if (name)` отсекает ещё и `""` / `0` / `false`. Если пустая строка валидна — лучше явная проверка `name != null` или `typeof name === "string"`.
+Используйте код с осторожностью.
 
----
-
-#### 3) Равенство (`===`, `!==`, `switch`)
+3. Оператор `instanceof` (для классов и экземпляров)
+Проверяет, был ли объект создан с помощью конкретного конструктора/класса.
 
 ```ts
-function handle(status: "idle" | "loading" | "error") {
-  if (status === "loading") {
-    // status: "loading"
+function logDate(date: string | Date) {
+  if (date instanceof Date) {
+    console.log(date.toUTCString()); // Тип сужен до Date
+  } else {
+    console.log(date.trim()); // Тип сужен до string
   }
-  switch (status) {
-    case "idle":
-      return;
-    case "loading":
-      return;
+}
+```
+
+Используйте код с осторожностью.
+
+4. Размеченные объединения (Discriminated Unions)
+Паттерн, при котором у каждого типа в объединении есть общее поле-маркер с конкретным литеральным значением (например, `type` или `kind`).
+
+```ts
+type Success = { status: "success"; data: string };
+type Failure = { status: "error"; error: Error };
+
+function handleResponse(res: Success | Failure) {
+  // Сужение через switch по полю-маркеру
+  switch (res.status) {
+    case "success":
+      console.log(res.data); // Доступно только для Success
+      break;
     case "error":
-      return;
+      console.log(res.error); // Доступно только для Failure
+      break;
   }
 }
 ```
 
-Часто используют вместе с **discriminated union** (см. п. 5).
+Используйте код с осторожностью.
 
----
-
-#### 4) Оператор `in` — наличие поля
+5. Проверка на равенство (`===`, `!==`, `switch`)
+TypeScript сужает типы, если переменная сравнивается с конкретным значением (например, с `null` или фиксированной строкой).
 
 ```ts
-type Cat = { meow: () => void };
-type Dog = { bark: () => void };
-
-function speak(animal: Cat | Dog) {
-  if ("meow" in animal) {
-    animal.meow(); // Cat
-  } else {
-    animal.bark(); // Dog
+function clean(value: string | null) {
+  if (value !== null) {
+    console.log(value.toLowerCase()); // value: string
   }
 }
 ```
 
-Удобно, когда у вариантов разные поля и нет общего тега `type`/`kind`. Минус: проверка только на ключ, не на «форму» глубоко; легко ошибиться, если ключи пересекаются.
+Используйте код с осторожностью.
 
----
-
-#### 5) Discriminated union (tagged union) — главный паттерн в React/API
-
-Общее литеральное поле-дискриминатор (`type`, `kind`, `status`):
+6. Пользовательские защитники типа (Type Predicates)
+Функции, которые возвращают булево значение, но в качестве типа возвращаемого значения используют синтаксис `arg is Type`. Это заставляет TypeScript верить результату функции.
 
 ```ts
-type Success = { status: "ok"; data: string };
-type Fail = { status: "error"; message: string };
-type Result = Success | Fail;
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
 
-function getData(result: Result): string {
-  if (result.status === "ok") {
-    return result.data; // Success
+function uppercase(x: unknown) {
+  if (isString(x)) {
+    console.log(x.toUpperCase()); // x автоматически стал string
   }
-  return result.message; // Fail
 }
 ```
 
-Почему это любят на собесах: после проверки одного поля TS сужает **весь объект**, а не только поле. Это база для state-машин UI, ответов API, Redux-like экшенов.
+Используйте код с осторожностью.
 
----
-
-#### 6) `instanceof` — для классов / встроенных объектов
+7. Проверка на истинность (Truthiness narrowing)
+Сужение типа при проверке переменной в логическом контексте (удаление `null` или `undefined` из возможных типов).
 
 ```ts
-function getDateLabel(value: Date | string) {
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-  return value.toUpperCase();
-}
-
-if (err instanceof Error) {
-  console.log(err.message);
-}
-```
-
-Ограничения: плохо работает через iframe/разные realm; для plain-object DTO с бэка классов обычно нет — там guards/схемы.
-
----
-
-#### 7) `Array.isArray`
-
-```ts
-function normalize(input: string | string[]) {
-  if (Array.isArray(input)) {
-    return input.join(","); // string[]
-  }
-  return input; // string
-}
-```
-
-`typeof input === "object"` тут не поможет отличить массив.
-
----
-
-#### 8) Type predicate (`x is T`) — свой type guard
-
-Обычная функция, возвращающая `boolean`, **не сужает** тип снаружи. Нужна аннотация `param is Type`:
-
-```ts
-type User = { id: string; name: string };
-
-function isUser(value: unknown): value is User {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "id" in value &&
-    typeof (value as User).id === "string" &&
-    typeof (value as User).name === "string"
-  );
-}
-
-function handle(data: unknown) {
-  if (isUser(data)) {
-    // data: User
-    console.log(data.name);
+function printWords(words: string[] | null | undefined) {
+  if (words) {
+    // убрали null и undefined, остался только массив
+    console.log(words.length);
   }
 }
 ```
 
-Без `value is User` внутри `if (isUser(data))` тип останется `unknown`.
+Используйте код с осторожностью.
 
-В массивах: `arr.filter(isUser)` тоже сужает результат до `User[]` (для type predicate).
+📊 Сводная таблица применения
 
----
-
-#### 9) Assertion functions (`asserts x is T`)
-
-```ts
-function assertUser(value: unknown): asserts value is User {
-  if (!isUser(value)) {
-    throw new Error("Not a user");
-  }
-}
-
-function run(data: unknown) {
-  assertUser(data);
-  // после вызова data: User
-  console.log(data.id);
-}
-```
-
-Отличие от predicate: не возвращает `boolean`, а **гарантирует** тип после вызова или бросает ошибку. Удобно на границах модулей / в начале функции.
-
----
-
-#### 10) Присваивание и контроль потока (менее очевидно, но полезно знать)
-
-```ts
-function example(x: string | number | boolean) {
-  if (typeof x === "string" || typeof x === "number") {
-    // x: string | number
-  } else {
-    // x: boolean
-  }
-}
-
-let value: string | number;
-value = Math.random() > 0.5 ? "hi" : 1;
-// дальше TS может сузить по факту присваивания в простых случаях
-```
-
-Также `return` / `throw` в ранней ветке сужают тип «ниже по функции» (early return — частый стиль в React-хендлерах).
-
----
-
-#### Чем narrowing НЕ является
-
-| Подход | Проблема |
-|--------|----------|
-| `as User` / `<User>data` | Нет проверки; можно солгать типам |
-| `@ts-ignore` / `any` | Отключает систему типов |
-| «Просто поверили бэку» | Runtime может прислать другое |
-
-Правильная граница системы: `unknown` → narrowing / zod (`parse`) → узкий тип.
-
----
-
-**Хороший ответ кандидата (1–2 мин):**
-«Это control flow analysis: после проверки union становится уже. Основные способы — typeof, проверка на null, ===/switch, in, instanceof, Array.isArray, discriminated union, type guard с `is`, иногда asserts. Покажу пример с `status: "ok" | "error"`.»
-
-**Красные флаги:**
-- Сразу предлагает `as` вместо проверки.
-- Пишет helper `function isUser(x): boolean` и не понимает, почему тип не сузился.
-- Путает narrowing с приведением типов / с runtime-валидацией библиотекой (близко по цели, но механизм другой).
-- Думает, что narrowing «удаляет» варианты в runtime.
-
-**Follow-up:** Чем `as User` отличается от type guard? Когда assertion допустим?  
-→ Guard проверяет и сужает; `as` только говорит компилятору. `as` допустим, когда тип уже доказан иначе (DOM `getElementById` после проверки, узкие внутренние хелперы), но не для сырого `response.json()`.
-
-**Follow-up 2:** Почему `filter` с обычным `Boolean` плохо сужает `(T | null)[]`?  
-→ Нужен predicate: `arr.filter((x): x is T => x != null)`.
-
-**Упрощение:** «Есть `string | number`. Как внутри функции безопасно вызвать `toUpperCase` только для строки?»
+| Инструмент | Для чего лучше всего подходит? | Пример проверки |
+|---|---|---|
+| `typeof` | Различение примитивов (`string`, `number`, `boolean`) | `typeof x === "number"` |
+| `in` | Различение обычных объектов по уникальным ключам | `"key" in obj` |
+| `instanceof` | Различение классов, встроенных объектов (Date, RegExp) | `x instanceof Date` |
+| Литеральное поле | Различение объектов в больших архитектурах (API, State) | `switch (obj.type)` |
+| Type Predicate | Вынесение сложной логики проверки в отдельные функции | `function isUser(x): x is User` |
 
 ---
 
@@ -568,101 +484,93 @@ type First = (typeof pair)[0]; // 1
 
 **Эталонный ответ:**
 
-Общее: оба описывают форму объекта; в большинстве React-кейсов взаимозаменяемы.
+В TypeScript `type` (псевдоним типа) и `interface` (интерфейс) похожи: оба описывают “форму” объектов или сигнатуры. Но возможности различаются.
 
-| | `interface` | `type` |
-|---|-------------|--------|
-| Объекты | да | да |
-| Union / mapped / conditional | нет (напрямую) | да |
-| Extends / пересечение | `extends` | `&` |
-| Declaration merging | **да** (слияние одноимённых) | нет |
-| `implements` в class | удобно | тоже можно |
-| Вычисляемые ключи / сложные выражения | слабее | сильнее |
+Коротко про главное отличие:
+- **`interface`** — чаще про структуру объекта и может **расширяться/сливаться**.
+- **`type`** — универсальнее: может описывать примитивы, union/intersection, кортежи и “вычисляемые” типы; при этом **не поддерживает merging**.
+
+📊 Главные отличия
+
+1. **Слияние деклараций (Declaration Merging)**
+- `interface`: поддерживает автоматическое слияние. Два интерфейса с одинаковым именем объединяются.
+- `type`: не поддерживает слияние. Объявление двух `type` с одинаковым именем даст ошибку Duplicate identifier.
 
 ```ts
-interface User {
-  id: string;
+interface Window {
+  customProp: string;
 }
-interface User { // merging
+interface Window {
+  anotherProp: number;
+} // ✅ они объединятся
+
+type User = { name: string };
+type User = { age: number }; // ❌ Duplicate identifier
+```
+
+Используйте код с осторожностью.
+
+2. **Возможности моделирования данных**
+- `interface`: в основном про **форму объектов** (а также может описывать функции/классы).
+- `type`: может описывать что угодно, включая union/intersection и сложные вычисления типов.
+
+```ts
+type ID = string | number; // ✅ Union (нельзя сделать через interface)
+type Point = [number, number]; // ✅ Кортеж
+```
+
+Используйте код с осторожностью.
+
+3. **Синтаксис расширения**
+- `interface` расширяется через `extends`.
+- `type` расширяется через пересечение `&` (композиция типов).
+
+```ts
+// Расширение интерфейса
+interface Animal {
   name: string;
 }
-// User = { id: string; name: string }
-```
-
-Главное отличие на собесе — **что умеет `type`, а `interface` напрямую нет**:
-
-#### Union (`A | B`)
-
-```ts
-type Success = { status: "ok"; data: string };
-type Fail = { status: "error"; message: string };
-type Result = Success | Fail; // только type alias
-
-// interface Result = Success | Fail; // так нельзя
-
-// React props с вариантами
-type InputValue = string | number;
-type Status = "idle" | "loading" | "success" | "error";
-```
-
-`interface` описывает одну форму объекта. Варианты («или») — территория `type`. На практике: статусы UI, ответы API, props вроде `string | string[]`.
-
-Можно «обернуть» union в interface только косвенно (поле внутри), но сам alias на union — через `type`:
-
-```ts
-interface ApiEnvelope {
-  result: Success | Fail; // union внутри поля — ок
+interface Bear extends Animal {
+  honey: boolean;
 }
+
+// Расширение типа
+type AnimalType = { name: string };
+type BearType = AnimalType & { honey: boolean };
 ```
 
-#### Mapped types (`{ [K in ...] }`)
+Используйте код с осторожностью.
 
-```ts
-type User = { id: string; name: string; email: string };
+🛠 Сравнение на практике
 
-type ReadonlyUser = { readonly [K in keyof User]: User[K] };
-type Nullable<T> = { [K in keyof T]: T[K] | null };
-type FeatureFlags = { [K in "darkMode" | "beta" | "analytics"]: boolean };
+| Критерий | `interface` | `type` |
+|---|---|---|
+| Что может описывать | Обычно объекты/сигнатуры | Любые типы: union, intersection, tuple, вычисления |
+| Declaration merging | Да | Нет |
+| Расширение | `extends` | `&` (пересечение) |
+| Union / tuple | Нельзя напрямую | Да |
+| `implements` в class | удобно | тоже можно, если тип описывает объект |
 
-// как устроен Partial «своими руками»
-type MyPartial<T> = { [K in keyof T]?: T[K] };
-type UserDraft = MyPartial<User>; // все поля опциональны — удобно для форм
-```
+🤔 Что выбрать?
 
-Mapped — «пройтись по ключам и собрать новый тип». Так устроены `Partial` / `Readonly` / `Pick` внутри. У `interface` нет синтаксиса `[K in ...]`.
+Best Practice: используйте `interface` по умолчанию, пока вам не понадобятся специфические возможности `type`.
 
-#### Conditional types (`T extends U ? X : Y`)
+Выбирайте `interface`, если:
+- описываете публичный API/библиотеку/плагин, который должны расширять внешние разработчики (через declaration merging);
+- описываете сущности приложения как “классические” объекты;
+- хотите использовать этот контракт в `implements`.
 
-```ts
-type IsString<T> = T extends string ? true : false;
-type A = IsString<"hi">; // true
-type B = IsString<number>; // false
+Выбирайте `type`, если:
+- нужен **union** или **intersection** типов;
+- нужен примитив/кортеж (например, `type Price = number`, `type Coordinates = [number, number]`);
+- нужны продвинутые возможности TypeScript: `Mapped Types` (`Record`, `Partial`), `Conditional Types` (`T extends U ? X : Y`) и другие type-level утилиты.
 
-type ElementOf<T> = T extends (infer U)[] ? U : T;
-type Item = ElementOf<string[]>; // string
+**Красные флаги:**
+- говорить “`interface устарел`”;
+- говорить “`type нельзя для объектов`”;
+- не уметь привести пример, когда нужен именно `type` (union/mapped/conditional) или наоборот — когда нужен `interface` (merging/расширяемость публичных контрактов).
 
-type NonNullable<T> = T extends null | undefined ? never : T;
-type C = NonNullable<string | null>; // string
-
-// практичный хелпер
-type ApiPayload<T> = T extends { data: infer D } ? D : never;
-```
-
-Условие на уровне типов + часто `infer`. Нужны для utility (`ReturnType`, `Exclude`) и типобезопасных хелперов. `interface` conditional выразить не может.
-
-Краткий вывод для ментора: если кандидат говорит только «оба для объектов» — слабо. Сильный Middle сам приводит **union / mapped / conditional** как причину взять `type`.
-
-Практика команд (часто на собесе ждут осознанный ответ):
-- `interface` — для публичных объектных контрактов / props, которые могут расширять и мержить;
-- `type` — для union, mapped, conditional, utility, вычисляемых типов;
-- главное — **консистентность** в проекте.
-
-**Красные флаги:** «interface устарел» / «type нельзя для объектов» — мифы; не может привести пример, где нужен именно `type`.
-
-**Follow-up:** Что такое declaration merging и где оно реально нужно (augment библиотек, `Window`)?
-
-**Follow-up 2:** Покажи мини-пример mapped или conditional (мост к блоку 5).  
-→ Достаточно `Partial`-подобного `{ [K in keyof T]?: T[K] }` или `T extends string ? A : B`.
+**Follow-up:** Что такое declaration merging и где оно реально нужно (augment для `Window` и библиотек)?
 
 ---
 
@@ -672,62 +580,83 @@ type ApiPayload<T> = T extends { data: infer D } ? D : never;
 
 Слово одно — смыслы разные. На собесе важно явно разделить.
 
-#### 1) Наследование интерфейсов / классов
+#### 1) `extends` у интерфейсов (наследование / расширение)
+
+Здесь `extends` работает как классическое наследование. Он берет все свойства родительского интерфейса и позволяет дописать дополнительные поля.
 
 ```ts
-interface BaseProps {
-  className?: string;
-  testId?: string;
+interface Animal {
+  name: string;
 }
 
-interface ButtonProps extends BaseProps {
-  onClick: () => void;
-  title: string;
+// Переносим `name` и добавляем `honey`
+interface Bear extends Animal {
+  honey: boolean;
 }
 
-// ButtonProps = className? + testId? + onClick + title
-const props: ButtonProps = {
-  title: "Save",
-  onClick: () => {},
-  className: "btn",
+const winnie: Bear = {
+  name: "Винни",
+  honey: true, // ✅ обязаны указать оба поля
 };
 ```
 
-Несколько родителей: `interface A extends B, C { ... }`.  
-Аналог у `type`: `type ButtonProps = BaseProps & { onClick: () => void; title: string }`.
+Используйте код с осторожностью.
 
-#### 2) Constraint дженерика — «T должен быть подтипом X»
-
-```ts
-function getId<T extends { id: string }>(item: T): string {
-  return item.id;
-}
-
-getId({ id: "1", name: "Ada" }); // ок
-// getId({ name: "Ada" }); // ошибка — нет id
-
-function pickName<T extends { name: string }>(items: T[]): string[] {
-  return items.map((i) => i.name);
-}
-```
-
-Constraint говорит компилятору: внутри функции можно безопасно читать поля из ограничения.
-
-#### 3) Conditional types
+#### 2) Constraints у generics (ограничения дженериков)
+В дженериках синтаксис `T extends Something` не создает новый тип. Он ставит жесткое условие (контракт) для функции или класса: “Ты можешь передать сюда любой тип `T`, но он обязан быть совместим с типом `Something`” (то есть иметь как минимум нужный набор свойств).
 
 ```ts
-type IsArray<T> = T extends unknown[] ? true : false;
+interface HasLength {
+  length: number;
+}
+
+// Ограничиваем `T`: он обязан иметь свойство `length`
+function logLength<T extends HasLength>(item: T): void {
+  console.log(item.length); // ✅ теперь TS разрешает обратиться к length
+}
+
+logLength("Привет"); // ✅ работает
+logLength([1, 2, 3]); // ✅ работает
+logLength({ length: 10 }); // ✅ работает
+
+// logLength(42); // ❌ Ошибка: у числа нет свойства length
 ```
 
-Здесь `extends` снова про совместимость типов, но уже в условном типе.
+Используйте код с осторожностью.
 
-Не путать с runtime `extends` в JS-классах (`class Admin extends User`) — в типах это про assignability, не про прототипы.
+📊 Сравнение: в чем принципиальная разница?
 
-**Красные флаги:** смешивает «наследование props» и «ограничение T» в один ответ без примеров.
+```ts
+interface User {
+  id: number;
+  name: string;
+}
 
-**Упрощение:** «Как ограничить дженерик так, чтобы у аргумента точно было поле `id`?»
+// 1) Способ без дженерика (просто interface)
+function updateWithInterface(obj: User): User {
+  return obj;
+}
 
-**Follow-up:** Чем `T extends object` отличается от `T extends Record<string, unknown>`? (на уровне идеи)
+// 2) Способ с constraint дженерика (Generic Constraint)
+function updateWithGeneric<T extends User>(obj: T): T {
+  return obj;
+}
+
+const admin = { id: 1, name: "Петр", role: "admin" };
+
+const res1 = updateWithInterface(admin); // тип res1 = User (поле role потеряется)
+const res2 = updateWithGeneric(admin); // ✅ тип res2 = typeof admin (role сохранится)
+```
+
+Используйте код с осторожностью.
+
+⚖️ Итоговая шпаргалка
+
+| Критерий | `extends` у интерфейсов | `extends` у дженериков (constraints) |
+|---|---|---|
+| Что делает? | Создает новый тип, копируя свойства старого | Проверяет переданный тип на соответствие контракту |
+| Зачем нужен? | Чтобы избежать дублирования полей при проектировании моделей данных | Чтобы безопасно работать со свойствами внутри универсальных функций/классов |
+| Что на выходе? | Новый, более “тяжёлый” интерфейс | Тот же самый тип, который пришел на вход (без потери уникальных свойств) |
 
 ---
 
@@ -741,69 +670,118 @@ type IsArray<T> = T extends unknown[] ? true : false;
 
 **Эталонный ответ:**
 
-Generics — параметризация типа: одна реализация, много конкретных типов с сохранением связей вход → выход.
+Generics (дженерики, или универсальные типы) — это инструмент TypeScript, который позволяет создавать компоненты (функции, интерфейсы или классы), работающие с различными типами данных, сохраняя при этом строгую типизацию и безопасность.
+
+Простыми словами: дженерики позволяют передавать типы данных как аргументы (переменные) в другие типы, функции или классы. Они работают как «шаблоны» или «чертежи».
+
+❓ Зачем они нужны?
+
+Без дженериков перед разработчиком встает дилемма:
+- либо писать отдельную функцию под каждый тип данных (дублирование кода),
+- либо использовать `any` (потеря контроля со стороны TypeScript).
+
+Дженерики решают три главные задачи:
+- Переиспользование кода: одна функция может обрабатывать и строки, и числа, и кастомные объекты.
+- Сохранение точного типа: в отличие от `any`, дженерик запоминает, какой именно тип в него передали, и гарантирует, что на выходе будет именно он.
+- Безопасность на этапе компиляции: TypeScript не позволит случайно вызвать метод строки у числа.
+
+🛠 Пример из жизни: функция-обертка
+
+Представьте, что вам нужно написать функцию, которая принимает значение и возвращает объект-коробку с этим значением внутри.
+
+❌ Плохой подход №1 (Дублирование кода):
 
 ```ts
-function identity<T>(value: T): T {
-  return value;
+function wrapNumber(value: number) {
+  return { content: value };
 }
 
-const a = identity(1);       // T = number
-const b = identity("hello"); // T = string
-const c = identity<User>(user); // T задали явно
-
-function first<T>(arr: T[]): T | undefined {
-  return arr[0];
+function wrapString(value: string) {
+  return { content: value };
 }
-
-const n = first([10, 20]); // number | undefined
-const s = first(["a", "b"]); // string | undefined
 ```
 
-Без generics пришлось бы писать перегрузки или скатываться в `any`:
+Используйте код с осторожностью.
+
+❌ Плохой подход №2 (Использование `any`):
 
 ```ts
-// плохо
-function firstAny(arr: any[]): any {
-  return arr[0];
+function wrapAny(value: any) {
+  return { content: value };
 }
+
+const box = wrapAny("Привет");
+// ❌ TypeScript думает, что box.content — это any.
+// Мы потеряли автодополнение методов строки (.toUpperCase() и т.д.)
 ```
 
-Зачем в реальном frontend:
-- `Promise<T>`, `AxiosResponse<T>`, `ApiResponse<T>`;
-- хуки: `useState<T>`, свой `useLocalStorage<T>`;
-- списки / таблицы / Select с разными item-типами;
-- утилиты `pick` / `pluck` / `merge`.
+Используйте код с осторожностью.
 
-Несколько параметров и default:
+✅ Правильный подход (С использованием Generics):
+
+Мы используем специальный параметр-букву (обычно `<T>`, от слова Type), который выступает в роли переменной для типа.
 
 ```ts
-type ApiResponse<TData, TError = string> = {
-  data: TData;
-  error: TError | null;
+function wrapInBox<T>(value: T) {
+  return { content: value };
+}
+
+// 1) Передаем строку
+const stringBox = wrapInBox<string>("Привет");
+// TypeScript точно знает, что stringBox.content — это string
+
+// 2) Передаем число (TS может сам догадаться о типе)
+const numberBox = wrapInBox(42);
+// TypeScript автоматически вывел тип: numberBox.content — это number
+```
+
+Используйте код с осторожностью.
+
+💡 Продвинутый пример: Интерфейсы и Массивы
+
+Дженерики очень часто используются для описания ответов от сервера, где общая структура (status, error) одинаковая, а сами данные (data) всегда разные.
+
+```ts
+// Универсальная структура ответа API
+interface ApiResponse<DataShape> {
+  status: "success" | "error";
+  data: DataShape;
+  error?: string;
+}
+
+// Типы для конкретных данных
+interface User {
+  id: number;
+  name: string;
+}
+
+interface Product {
+  id: number;
+  title: string;
+  price: number;
+}
+
+// Переиспользуем интерфейс для разных запросов
+const userResponse: ApiResponse<User> = {
+  status: "success",
+  data: { id: 1, name: "Алексей" },
 };
 
-type UserResponse = ApiResponse<User>;
-type UserResponseWithCode = ApiResponse<User, { code: number; message: string }>;
+const productResponse: ApiResponse<Product[]> = {
+  status: "success",
+  data: [{ id: 101, title: "Клавиатура", price: 3000 }],
+};
 ```
 
-Связь параметров:
+Используйте код с осторожностью.
 
-```ts
-function pair<T, U>(left: T, right: U): [T, U] {
-  return [left, right];
-}
+📊 Разница между `any`, `unknown` и `Generic <T>`
 
-const p = pair("id", 1); // [string, number]
-```
-
-**Красные флаги:**
-- Пишет `identity(value: any): any`.
-- Не может объяснить, чем generic лучше «просто unknown».
-- Ставит `<T>` «для красоты», но не использует T в сигнатуре.
-
-**Follow-up:** Что такое default type parameter? Когда нужен?  
-→ Как `TError = string` выше — частый кейс не дублировать аргумент.
+| ТипСохраняет исходный тип? | Безопасен? | Зачем нужен? |
+|---|---|---|
+| `any` | Нет | ❌ Отключение проверок TypeScript (крайний случай) |
+| `unknown` | Нет | ✅ Для данных, тип которых мы вообще не знаем (нужен narrowing) |
+| `Generic <T>` | Да | ✅ Для создания гибких, но строго типизированных компонентов |
 
 ---
 
@@ -1102,108 +1080,98 @@ type T1 = NoNull<string | null>; // string
 
 **Эталонный ответ:**
 
-`enum` — одна из немногих TS-фич с **runtime** представлением (обычный enum → объект в JS).
+Enums (перечисления) в TypeScript — одна из немногих фич, которая генерирует **реальный JavaScript-код** после компиляции (а не просто исчезает, как интерфейсы или типы). Из-за особенностей своей реализации в современном коде они часто считаются антипаттерном.
+
+➕ Плюсы Enums:
+- Самодокументируемый код: группируют связанные константы в единую структуру.
+- Строгая типизация: переменная с типом энума принимает только значения из этого энума.
+- Автодополнение в IDE: подсказки через точку (`Direction.Up`).
+
+➖ Минусы Enums:
+
+1. **Генерация лишнего кода**: обычные энумы компилируются в IIFE-функции с reverse mapping.
+
+2. **Небезопасность числовых Enums**: TypeScript позволяет присвоить переменной любое число, даже если его нет в списке:
 
 ```ts
-enum Direction {
-  Up,    // 0
-  Down,  // 1
-}
-// runtime примерно:
-// Direction = { Up: 0, Down: 1, 0: "Up", 1: "Down" }  // reverse mapping у numeric
-
-enum Status {
-  Idle = "idle",
-  Loading = "loading",
-}
+enum Status { Pending, Success }
+let current: Status = 999; // ✅ Ошибка НЕ возникнет!
 ```
 
-Плюсы (что могут сказать):
-- удобный неймспейс значений;
-- автодополнение;
-- string enum читаемее numeric.
+Используйте код с осторожностью.
 
-Минусы, которые часто ждут услышать:
-- лишний runtime-код и бандл;
-- numeric enum плохо treeshake-ится / странный reverse mapping;
-- числовые enum сравнимы с любыми number — источник багов;
-- хуже стыкуется с union-first стилем и `as const` объектами.
-
-Альтернативы (предпочтительны во многих React-командах):
+3. **Номинальная типизация**: строковый энум не принимает обычную строку с тем же значением:
 
 ```ts
-const Direction = {
-  Up: "UP",
-  Down: "DOWN",
+enum Role { Admin = "ADMIN" }
+function check(role: Role) {}
+
+check("ADMIN"); // ❌ Ошибка! Требуется именно Role.Admin
+```
+
+Используйте код с осторожностью.
+
+4. **Проблемы с Tree-shaking**: из-за IIFE сборщики часто не могут удалить неиспользуемый код.
+
+🛠 Чем заменить Enum?
+
+**1) Union of Literal Types — лучший выбор по умолчанию**
+
+```ts
+type Direction = "Up" | "Down" | "Left" | "Right";
+
+let move: Direction = "Up"; // ✅ строго, лаконично, безопасно
+// move = "North"; // ❌ ошибка компиляции
+```
+
+Используйте код с осторожностью.
+
+Плюсы: 0 строк в скомпилированном JS (бандл меньше), стандартная структурная типизация, полная поддержка IDE.
+
+**2) Объект с `as const` — если нужны значения в рантайме**
+
+Если нужно перебирать значения в цикле, получать ключи или использовать структуру как реальный JS-объект:
+
+```ts
+const STATUS = {
+  Pending: "PENDING",
+  Success: "SUCCESS",
+  Error: "ERROR",
 } as const;
 
-type Direction = (typeof Direction)[keyof typeof Direction]; // "UP" | "DOWN"
+// Тип на основе значений объекта
+type Status = (typeof STATUS)[keyof typeof STATUS]; // "PENDING" | "SUCCESS" | "ERROR"
 
-// ещё проще
-type Status = "idle" | "loading" | "error";
+function handleStatus(status: Status) {}
+
+handleStatus(STATUS.Success); // ✅ через объект
+handleStatus("SUCCESS"); // ✅ напрямую строкой (в отличие от Enum!)
 ```
 
-`const enum` инлайнится в литералы, но с оговорками (часто запрещён правилами проекта / `isolatedModules` / bundlers).
+Используйте код с осторожностью.
 
-**Красные флаги:** «enum и union — одно и то же»; не знает про runtime-код.
+Плюсы: идеальный tree-shaking, привычный синтаксис через точку, полная безопасность типов, компилируется в обычный плоский JS-объект.
 
-**Follow-up:** Чем string enum лучше numeric?  
-→ Нет reverse mapping, значения читаемы в сети/логах, меньше сюрпризов со сравнением.
+📊 Сводное сравнение
+
+| Критерий | Обычный `enum` | Union (`type`) | Объект `as const` |
+|---|---|---|---|
+| Есть в рантайме (в JS)? | Да (тяжелый IIFE) | Нет (0 байт в бандле) | Да (лёгкий объект) |
+| Принимает чистые строки? | Нет | Да | Да |
+| Безопасен для чисел? | Нет | Да | Да |
+| Tree-shaking? | Нет | Да | Да |
 
 ---
 
-## Блок 6. Практика: React, strict, границы системы
+## Блок 6. Практика: TypeScript в React
 
-*Добиваем тем, что реально спрашивают на frontend Middle.*
+*Вопросы о том, как TS реально используется в повседневной фронтенд-разработке.*
 
-### 15. Что включает `strict` в tsconfig? Какие флаги важны?
-
-**Эталонный ответ:**
-
-`"strict": true` включает набор флагов (смысл — максимальная безопасность по умолчанию):
-- `noImplicitAny`
-- `strictNullChecks`
-- `strictFunctionTypes`
-- `strictBindCallApply`
-- `strictPropertyInitialization`
-- `noImplicitThis`
-- `alwaysStrict`
-- (точный список смотри в доке версии TS — набор расширяется со временем)
-
-Самое заметное в повседневке frontend:
-
-```ts
-// strictNullChecks
-function fullName(user: { name?: string }) {
-  // user.name.toUpperCase(); // ошибка: possibly undefined
-  return user.name?.toUpperCase();
-}
-
-// noImplicitAny
-function log(x) { // ошибка: Parameter 'x' implicitly has an 'any' type
-  console.log(x);
-}
-function logOk(x: string) {
-  console.log(x);
-}
-```
-
-Ещё полезные флаги **вне** базового `strict`:
-- `noUncheckedIndexedAccess` — `arr[0]` → `T | undefined`;
-- `exactOptionalPropertyTypes` — строже опциональные поля;
-- `skipLibCheck` — не проверять `.d.ts` зависимостей (скорость);
-- `jsx`, `moduleResolution: "bundler"` — под современный React/Vite.
-
-**Красные флаги:** «strict просто ругается сильнее» без примеров; предлагает выключить `strictNullChecks` «чтобы было проще».
-
-**Follow-up:** Почему без `strictNullChecks` TypeScript заметно слабее для frontend?  
-→ `null`/`undefined` снова «везде», типичные runtime-краши (`Cannot read property of null`) компилятор не ловит.
-
----
-
-### 16. Как типизировать props, события и детей в React?
+### 15. Как типизировать props компонента? Как пробросить нативные атрибуты?
 
 **Эталонный ответ:**
+
+Props описываются через `type` (или `interface`) и деструктурируются в аргументе функции.
 
 ```ts
 type ButtonProps = {
@@ -1223,19 +1191,9 @@ function Button({ title, disabled, onClick, children }: ButtonProps) {
 }
 ```
 
-События форм:
+Используйте код с осторожностью.
 
-```ts
-function onChange(e: React.ChangeEvent<HTMLInputElement>) {
-  console.log(e.target.value);
-}
-
-function onSubmit(e: React.FormEvent<HTMLFormElement>) {
-  e.preventDefault();
-}
-```
-
-Проброс нативных атрибутов + свои props:
+Если нужно принять **все** нативные атрибуты кнопки + свои кастомные:
 
 ```ts
 type IconButtonProps = React.ComponentPropsWithoutRef<"button"> & {
@@ -1253,57 +1211,153 @@ function IconButton({ icon, loading, children, ...rest }: IconButtonProps) {
 }
 ```
 
-Полезные типы:
-- `React.ReactNode` — что можно отрендерить (`string`, `null`, элементы, массивы…);
-- `React.ReactElement` — уже именно элемент, уже;
-- `React.FC` / `FunctionComponent` — сейчас часто **не рекомендуют** как default (исторически неявные children, хуже с generics); лучше явные props;
-- `CSSProperties`, `HTMLAttributes<T>`, `ComponentProps<"div">`.
+Используйте код с осторожностью.
 
-**Красные флаги:** `onClick: any`; children через `React.FC` «потому что так в старых гайдах»; не знает `ChangeEvent`.
+Ключевые типы:
+- `React.ReactNode` — всё, что можно отрендерить (string, null, элементы, массивы).
+- `React.ComponentPropsWithoutRef<"tag">` — все атрибуты нативного элемента без ref.
+- `React.ComponentPropsWithRef<"tag">` — то же + ref (для `forwardRef`-компонентов).
+- `React.CSSProperties` — объект inline-стилей.
 
-**Follow-up:** Как пробросить все атрибуты нативной кнопки + свои props?  
-→ `ComponentPropsWithoutRef<"button"> & { loading?: boolean }`.
+Почему **не** `React.FC`:
+- исторически добавлял неявные `children`;
+- плохо стыкуется с generic-компонентами;
+- лучше явные props + деструктуризация.
 
 ---
 
-### 17. Как типизировать данные с бэка? Почему недостаточно `as User`?
+### 16. Как типизировать хуки: useState, useRef, кастомные хуки?
 
 **Эталонный ответ:**
 
-TS не проверяет сеть и JSON. `fetch().json()` по типам — неизвестные данные; assertion лишь затыкает компилятор.
+**`useState`** — generic, тип выводится из начального значения или задаётся явно:
 
-Плохо:
+```ts
+const [count, setCount] = useState(0); // number
+const [user, setUser] = useState<User | null>(null); // явно, т.к. начальное — null
+```
+
+Используйте код с осторожностью.
+
+**`useRef`** — два сценария:
+
+```ts
+// 1) Для DOM-элемента (React управляет ref)
+const inputRef = useRef<HTMLInputElement>(null);
+// inputRef.current — HTMLInputElement | null
+
+// 2) Для мутабельного значения (мы управляем сами)
+const timerRef = useRef<number | null>(null);
+timerRef.current = window.setTimeout(() => {}, 1000);
+```
+
+Используйте код с осторожностью.
+
+**Кастомный хук с generic:**
+
+```ts
+function useLocalStorage<T>(key: string, initial: T) {
+  const [value, setValue] = useState<T>(() => {
+    const stored = localStorage.getItem(key);
+    return stored ? (JSON.parse(stored) as T) : initial;
+  });
+
+  useEffect(() => {
+    localStorage.setItem(key, JSON.stringify(value));
+  }, [key, value]);
+
+  return [value, setValue] as const;
+}
+
+// Использование — T выводится из `initial`
+const [theme, setTheme] = useLocalStorage("theme", "light");
+// theme: string, setTheme: Dispatch<SetStateAction<string>>
+```
+
+Используйте код с осторожностью.
+
+`as const` на return нужен, чтобы TypeScript вернул кортеж `[T, SetState<T>]`, а не `(T | SetState<T>)[]`.
+
+---
+
+### 17. Как типизировать события в React?
+
+**Эталонный ответ:**
+
+React предоставляет generic-типы событий: `React.ChangeEvent<T>`, `React.MouseEvent<T>`, `React.FormEvent<T>`, `React.KeyboardEvent<T>` и т.д., где `T` — тип HTML-элемента.
+
+```ts
+function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
+  console.log(e.target.value); // TS знает, что target — это input
+}
+
+function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+  e.preventDefault();
+  const formData = new FormData(e.currentTarget);
+}
+
+function handleClick(e: React.MouseEvent<HTMLButtonElement>) {
+  console.log(e.clientX, e.clientY);
+}
+```
+
+Используйте код с осторожностью.
+
+Inline-обработчики в JSX типизируются автоматически:
+
+```tsx
+<input onChange={(e) => {
+  // e уже типизирован как React.ChangeEvent<HTMLInputElement>
+  console.log(e.target.value);
+}} />
+```
+
+Используйте код с осторожностью.
+
+Частая ошибка — путать `e.target` и `e.currentTarget`:
+- `currentTarget` — элемент, на котором повешен обработчик (всегда типизирован по `T`).
+- `target` — элемент, на котором произошло событие (может быть дочерним, тип менее точный).
+
+---
+
+### 18. Как типизировать ответ от сервера? Почему `as User` — плохо?
+
+**Эталонный ответ:**
+
+TypeScript работает **только на этапе компиляции**. В рантайме `fetch().json()` возвращает `any`/`unknown` — компилятор не может гарантировать форму данных из сети.
+
+❌ Плохой подход (`as` — ложь компилятору):
 
 ```ts
 type User = { id: string; name: string };
 
 const res = await fetch("/api/user");
-const user = (await res.json()) as User; // ложь компилятору
-console.log(user.name.toUpperCase()); // может упасть, если поля нет
+const user = (await res.json()) as User;
+// Если бэк вернёт { id: 123, username: "test" } — runtime-краш
 ```
 
-Лучше — граница системы:
+Используйте код с осторожностью.
+
+✅ Правильный подход — валидация на границе системы:
 
 ```ts
-const res = await fetch("/api/user");
-const data: unknown = await res.json();
-
-// 1) ручной type guard
-function isUser(value: unknown): value is User {
+// 1) Ручной type guard
+function isUser(data: unknown): data is User {
   return (
-    typeof value === "object" &&
-    value !== null &&
-    "id" in value &&
-    "name" in value &&
-    typeof (value as User).id === "string" &&
-    typeof (value as User).name === "string"
+    typeof data === "object" &&
+    data !== null &&
+    "id" in data &&
+    "name" in data &&
+    typeof (data as User).id === "string" &&
+    typeof (data as User).name === "string"
   );
 }
 
-if (!isUser(data)) throw new Error("Invalid user");
-// data: User
+const data: unknown = await res.json();
+if (!isUser(data)) throw new Error("Invalid user response");
+// data: User — безопасно
 
-// 2) schema library (предпочтительно в Mid+)
+// 2) Schema-библиотека (zod, valibot, yup) — предпочтительно
 import { z } from "zod";
 
 const UserSchema = z.object({
@@ -1311,17 +1365,18 @@ const UserSchema = z.object({
   name: z.string(),
 });
 
-type UserFromSchema = z.infer<typeof UserSchema>;
-const user = UserSchema.parse(data); // UserFromSchema или throw
+type User = z.infer<typeof UserSchema>;
+const user = UserSchema.parse(await res.json()); // User или throw
 ```
 
-Связь с блоками 1–2: `unknown` → narrowing / validation → узкий тип.  
-`as User` допустим только когда данные уже проверены иначе или это узкий внутренний хелпер с доверительным контрактом.
+Используйте код с осторожностью.
 
-**Красные флаги:** «просто пишу `as User` везде»; не понимает разницы compile-time и runtime.
+Зачем schema-библиотека:
+- **один source of truth**: runtime-проверка + статический тип без дублирования.
+- `z.infer<typeof Schema>` автоматически выводит TS-тип из схемы.
+- при изменении контракта бэка — сразу падает в рантайме с понятной ошибкой, а не молча ломает UI.
 
-**Follow-up:** Что такое type-safe schema library и зачем `z.infer<typeof schema>`?  
-→ Один source of truth: runtime-проверка + статический тип без дублирования руками.
+Правило: `as` допустим только когда данные **уже проверены** иначе (например, внутри type guard или после `parse`).
 
 ---
 
