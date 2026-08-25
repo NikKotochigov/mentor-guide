@@ -3,6 +3,8 @@
 > Источник: [Одноглазый Змей — speedrunit.ru](https://speedrunit.ru/)  
 > Краткая выжимка: типовые вопросы, скрытый смысл, готовые ответы
 
+Values-скрининг (Love / Trust / DO — хороший vs плохой ответ): [hr-screening-values.md](./hr-screening-values.md)
+
 ---
 
 ## Два режима на скрининге
