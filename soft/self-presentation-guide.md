@@ -22,7 +22,8 @@
 3. **Похожая структура должна быть и у первого места работы** (как выше)
 
 Практический чек-лист с доп. вопросами к каждому блоку: [self-presentation-checklist.md](./self-presentation-checklist.md).  
-Продажа себя под конкретного работодателя (конспект стрима): [self-presentation-interview.md](./self-presentation-interview.md).
+Продажа себя под конкретного работодателя (конспект стрима): [before-interview-guide.md](./before-interview-guide.md).  
+Скрипт созвона (ментор спрашивает → менти отвечает): [hr-legend-mock-session.md](./hr-legend-mock-session.md).
 
 ---
 
