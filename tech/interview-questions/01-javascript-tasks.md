@@ -68,10 +68,12 @@ say2(); // TypeError в strict (this = undefined) / undefined в non-strict
 class Cat {
   sound = "meow";
 
-  // arrow-поле экземпляра захватывает this экземпляра
+  // class field + arrow: создаётся НА ЭКЗЕМПЛЯРЕ при new Cat()
+  // this замыкается на этот экземпляр навсегда (лексически)
   say = () => console.log("Cat.say:", this.sound);
 
-  // обычный метод — this зависит от вызова
+  // обычный метод: лежит на Cat.prototype, своего this нет
+  // this определяется в момент ВЫЗОВА
   say2() {
     console.log("Cat.say2:", this.sound);
   }
@@ -79,13 +81,31 @@ class Cat {
 
 const myCat2 = new Cat();
 
-myCat2.say(); // Cat.say: meow
-myCat2.say2(); // Cat.say2: meow
+// --- вызов через экземпляр ---
+myCat2.say(); // Cat.say: meow  — arrow уже «привязан» к myCat2
+myCat2.say2(); // Cat.say2: meow — вызов obj.method() ⇒ this === myCat2
 
+// --- деструктуризация срывает контекст вызова ---
 const { say: sayFromInstance, say2: say2FromInstance } = myCat2;
 
+// sayFromInstance — это та же arrow-функция с экземпляра.
+// У неё this НЕ от вызова: он зафиксирован при создании поля.
+// Деструктуризация не меняет замыкание → this всё ещё myCat2.
 sayFromInstance(); // Cat.say: meow
-say2FromInstance(); // TypeError в strict (this = undefined) / undefined в non-strict
+
+// say2FromInstance — это обычная function с прототипа.
+// Вызов «голый»: say2FromInstance(), без obj. перед точкой.
+// this больше не myCat2:
+//   — modules / class body всегда strict → this === undefined → TypeError на this.sound
+//   — в non-strict (редко) this === globalThis → sound undefined
+say2FromInstance(); // TypeError (strict) / undefined (non-strict)
+
+// Коротко:
+//   say  = arrow field  → this «вшит» в экземпляр, отрыв от объекта безопасен
+//   say2 = prototype method → this только от способа вызова; деструктуризация ломает this
+//
+// Зачем arrow-поля в классах: колбэки (onClick={this.say}, setTimeout(this.say))
+// без .bind(this). Минус: метод не на прототипе — копия на каждом экземпляре.
 ```
 
 ---
