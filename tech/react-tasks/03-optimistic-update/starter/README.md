@@ -12,7 +12,7 @@
 - если `request()` успешно, оставляем `next` и снимаем `pending`;
 - если `request()` упал, откатываем `value` к тому, что было до клика, и снимаем `pending`.
 
-Код пиши в `src/useOptimisticState.ts`. `saveLike` уже есть в `src/api.ts`. Компонент в `src/App.tsx` готовый, его менять не нужно.
+Код пиши в `src/useOptimisticState.tsx`. `saveLike` уже есть в `src/api.tsx`. Компонент в `src/App.tsx` готовый, его менять не нужно.
 
 ## Как проверить
 

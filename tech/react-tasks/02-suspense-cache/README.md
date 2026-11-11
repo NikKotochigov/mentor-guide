@@ -14,7 +14,7 @@
 2. `useUser(id)` читает данные через `getUser`.
 3. В `Profile` не должно быть `useEffect`.
 
-Код пиши в `src/useUser.ts`. `fetchUser` уже есть в `src/api.ts`, его менять не нужно. Компоненты в `src/App.tsx` тоже готовы.
+Код пиши в `src/useUser.tsx`. `fetchUser` уже есть в `src/api.ts`, его менять не нужно. Компоненты в `src/App.tsx` тоже готовы.
 
 ## Как проверить
 
