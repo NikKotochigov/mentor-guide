@@ -109,6 +109,8 @@ function UserSearch() {
   );
 }
 
-export default function App() {
+export function App() {
   return <UserSearch />;
 }
+
+export default App;
